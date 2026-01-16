@@ -1,4 +1,4 @@
-package bootstrap
+package ignition
 
 import (
 	"context"
@@ -6,13 +6,15 @@ import (
 	"os"
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_6_experimental/types"
-	"github.com/openshift/installer/pkg/asset"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"k8s.io/utils/ptr"
+
+	"github.com/openshift/installer/pkg/asset"
 )
 
 const (
+	// ConfidentialClusterConfigEnvVar is the environment variable used to specify the path to the confidential cluster configuration file.
 	ConfidentialClusterConfigEnvVar = "OPENSHIFT_INSTALL_CONFIDENTIAL_CLUSTER_CONFIG"
 )
 
@@ -30,8 +32,9 @@ type TrusteeServer struct {
 
 // ConfidentialClusterConfigJSON represents the JSON structure for confidential cluster configuration.
 type ConfidentialClusterConfigJSON struct {
-	Clevis      *ClevisConfig      `json:"clevis,omitempty"`
-	Attestation *AttestationConfig `json:"attestation,omitempty"`
+	Clevis         *ClevisConfig         `json:"clevis,omitempty"`
+	Attestation    *AttestationConfig    `json:"attestation,omitempty"`
+	RemoteIgnition *RemoteIgnitionConfig `json:"remote_ignition,omitempty"`
 }
 
 // ClevisConfig represents the clevis configuration in JSON.
@@ -55,11 +58,18 @@ type RegistrationConfig struct {
 	Certificate string `json:"certificate,omitempty"`
 }
 
+// RemoteIgnitionConfig represents the remote ignition configuration in JSON.
+type RemoteIgnitionConfig struct {
+	URL         string `json:"url,omitempty"`
+	Certificate string `json:"certificate,omitempty"`
+}
+
 // ConfidentialClusterConfig represents the clevis and attestation configuration for confidential clusters.
 type ConfidentialClusterConfig struct {
-	File        *asset.File
-	Config      *igntypes.Clevis
-	Attestation *igntypes.Attestation
+	File           *asset.File
+	Config         *igntypes.Clevis
+	Attestation    *igntypes.Attestation
+	RemoteIgnition *igntypes.Registration
 }
 
 var _ asset.Asset = (*ConfidentialClusterConfig)(nil)
@@ -124,6 +134,14 @@ func (c *ConfidentialClusterConfig) Generate(_ context.Context, dependencies ass
 		logrus.Debug("Successfully loaded Attestation configuration")
 	}
 
+	if config.RemoteIgnition != nil {
+		c.RemoteIgnition = &igntypes.Registration{
+			Url:         ptr.To(config.RemoteIgnition.URL),
+			Certificate: ptr.To(config.RemoteIgnition.Certificate),
+		}
+		logrus.Debug("Successfully loaded Remote Ignition configuration")
+	}
+
 	c.File = &asset.File{
 		Filename: configPath,
 		Data:     data,
@@ -133,10 +151,12 @@ func (c *ConfidentialClusterConfig) Generate(_ context.Context, dependencies ass
 	return nil
 }
 
+// Name returns the human-friendly name of the asset.
 func (c *ConfidentialClusterConfig) Name() string {
 	return "Confidential Cluster Config"
 }
 
+// Load returns the confidential cluster configuration from disk.
 func (c *ConfidentialClusterConfig) Load(asset.FileFetcher) (found bool, err error) {
 	return false, nil
 }

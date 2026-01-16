@@ -173,7 +173,7 @@ func (a *Common) Dependencies() []asset.Asset {
 		&tls.IronicTLSCert{},
 		&releaseimage.Image{},
 		new(rhcos.Image),
-		&ConfidentialClusterConfig{},
+		&ignition.ConfidentialClusterConfig{},
 	}
 }
 
@@ -191,9 +191,9 @@ func (a *Common) generateConfig(dependencies asset.Parents, templateData *bootst
 	}
 
 	// Apply confidential cluster configuration if provided
-	confidentialClusterConfig := &ConfidentialClusterConfig{}
+	confidentialClusterConfig := &ignition.ConfidentialClusterConfig{}
 	dependencies.Get(confidentialClusterConfig)
-	if confidentialClusterConfig.Config != nil || confidentialClusterConfig.Attestation != nil {
+	if confidentialClusterConfig.Config != nil || confidentialClusterConfig.Attestation != nil || confidentialClusterConfig.RemoteIgnition != nil {
 		a.applyConfidentialClusterConfig(confidentialClusterConfig)
 	}
 
@@ -714,7 +714,7 @@ func applyTemplateData(template *template.Template, templateData interface{}) st
 
 // applyConfidentialClusterConfig applies the clevis and attestation configuration to the bootstrap ignition.
 // This configures the LUKS encryption with the specified clevis pin and attestation for confidential clusters.
-func (a *Common) applyConfidentialClusterConfig(confidentialClusterConfig *ConfidentialClusterConfig) {
+func (a *Common) applyConfidentialClusterConfig(confidentialClusterConfig *ignition.ConfidentialClusterConfig) {
 	if confidentialClusterConfig == nil {
 		return
 	}
@@ -749,6 +749,15 @@ func (a *Common) applyConfidentialClusterConfig(confidentialClusterConfig *Confi
 	if confidentialClusterConfig.Attestation != nil {
 		a.Config.Attestation = *confidentialClusterConfig.Attestation
 		logrus.Debugf("Added Attestation configuration for confidential cluster: %+v", a.Config.Attestation)
+	}
+	if confidentialClusterConfig.RemoteIgnition != nil {
+		a.Config.Ignition.Config.Merge = append(
+			a.Config.Ignition.Config.Merge,
+			igntypes.Resource{
+				Source: confidentialClusterConfig.RemoteIgnition.Url,
+			},
+		)
+		logrus.Debugf("Added Remote Ignition configuration for confidential cluster to bootstrap node: %+v", a.Config.Ignition.Config.Merge)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_6_experimental/types"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/openshift/installer/pkg/asset"
 	"github.com/openshift/installer/pkg/asset/ignition"
@@ -31,6 +32,7 @@ func (a *Worker) Dependencies() []asset.Asset {
 	return []asset.Asset{
 		&installconfig.InstallConfig{},
 		&tls.RootCA{},
+		&ignition.ConfidentialClusterConfig{},
 	}
 }
 
@@ -41,6 +43,23 @@ func (a *Worker) Generate(_ context.Context, dependencies asset.Parents) error {
 	dependencies.Get(installConfig, rootCA)
 
 	a.Config = pointerIgnitionConfig(installConfig.Config, rootCA.Cert(), "worker")
+
+	// Apply confidential cluster configuration if provided
+	confidentialClusterConfig := &ignition.ConfidentialClusterConfig{}
+	dependencies.Get(confidentialClusterConfig)
+	if confidentialClusterConfig.Attestation != nil {
+		a.Config.Attestation = *confidentialClusterConfig.Attestation
+		logrus.Debugf("Added Attestation configuration for confidential cluster to worker node: %+v", a.Config.Attestation)
+	}
+	if confidentialClusterConfig.RemoteIgnition != nil {
+		a.Config.Ignition.Config.Merge = append(
+			a.Config.Ignition.Config.Merge,
+			igntypes.Resource{
+				Source: confidentialClusterConfig.RemoteIgnition.Url,
+			},
+		)
+		logrus.Debugf("Added Remote Ignition configuration for confidential cluster to worker node: %+v", a.Config.Ignition.Config.Merge)
+	}
 
 	data, err := ignition.Marshal(a.Config)
 	if err != nil {
