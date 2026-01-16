@@ -173,7 +173,7 @@ func (a *Common) Dependencies() []asset.Asset {
 		&tls.IronicTLSCert{},
 		&releaseimage.Image{},
 		new(rhcos.Image),
-		&ConfidentialClusterConfig{},
+		&ignition.ConfidentialClusterConfig{},
 	}
 }
 
@@ -191,9 +191,9 @@ func (a *Common) generateConfig(dependencies asset.Parents, templateData *bootst
 	}
 
 	// Apply confidential cluster configuration if provided
-	confidentialClusterConfig := &ConfidentialClusterConfig{}
+	confidentialClusterConfig := &ignition.ConfidentialClusterConfig{}
 	dependencies.Get(confidentialClusterConfig)
-	if confidentialClusterConfig.Config != nil || confidentialClusterConfig.Attestation != nil {
+	if confidentialClusterConfig.RemoteIgnition != nil {
 		a.applyConfidentialClusterConfig(confidentialClusterConfig)
 	}
 
@@ -712,43 +712,20 @@ func applyTemplateData(template *template.Template, templateData interface{}) st
 	return buf.String()
 }
 
-// applyConfidentialClusterConfig applies the clevis and attestation configuration to the bootstrap ignition.
-// This configures the LUKS encryption with the specified clevis pin and attestation for confidential clusters.
-func (a *Common) applyConfidentialClusterConfig(confidentialClusterConfig *ConfidentialClusterConfig) {
+// applyConfidentialClusterConfig applies the remote ignition configuration to the bootstrap ignition.
+func (a *Common) applyConfidentialClusterConfig(confidentialClusterConfig *ignition.ConfidentialClusterConfig) {
 	if confidentialClusterConfig == nil {
 		return
 	}
 
-	if confidentialClusterConfig.Config != nil {
-		logrus.Info("Applying confidential cluster clevis configuration to bootstrap ignition")
-
-		luksEntry := igntypes.Luks{
-			Name:       "root",
-			Device:     ptr.To("/dev/disk/by-partlabel/root"),
-			Clevis:     *confidentialClusterConfig.Config,
-			Label:      ptr.To("root"),
-			WipeVolume: ptr.To(true),
-		}
-
-		a.Config.Storage.Luks = append(a.Config.Storage.Luks, luksEntry)
-		logrus.Debugf("Added LUKS configuration for confidential cluster: %+v", luksEntry)
-
-		// Add filesystem definition for the LUKS volume
-		filesystemEntry := igntypes.Filesystem{
-			Device:         "/dev/mapper/root",
-			Format:         ptr.To("ext4"),
-			Label:          ptr.To("root"),
-			Options:        []igntypes.FilesystemOption{"-O", "verity"},
-			UUID:           ptr.To("910678ff-f77e-4a7d-8d53-86f2ac47a823"),
-			WipeFilesystem: ptr.To(true),
-		}
-
-		a.Config.Storage.Filesystems = append(a.Config.Storage.Filesystems, filesystemEntry)
-		logrus.Debugf("Added filesystem configuration for confidential cluster: %+v", filesystemEntry)
-	}
-	if confidentialClusterConfig.Attestation != nil {
-		a.Config.Attestation = *confidentialClusterConfig.Attestation
-		logrus.Debugf("Added Attestation configuration for confidential cluster: %+v", a.Config.Attestation)
+	if confidentialClusterConfig.RemoteIgnition != nil {
+		a.Config.Ignition.Config.Merge = append(
+			a.Config.Ignition.Config.Merge,
+			igntypes.Resource{
+				Source: confidentialClusterConfig.RemoteIgnition.Url,
+			},
+		)
+		logrus.Debugf("Added Remote Ignition configuration for confidential cluster to bootstrap node: %+v", a.Config.Ignition.Config.Merge)
 	}
 }
 
