@@ -176,6 +176,7 @@ func (a *Common) Dependencies() []asset.Asset {
 		&tls.BMCVerifyCA{},
 		&releaseimage.Image{},
 		new(rhcos.Image),
+		&ignition.ConfidentialClusterConfig{},
 	}
 }
 
@@ -191,6 +192,11 @@ func (a *Common) generateConfig(dependencies asset.Parents, templateData *bootst
 			Version: igntypes.MaxVersion.String(),
 		},
 	}
+
+	// Apply confidential cluster configuration if provided
+	confidentialClusterConfig := &ignition.ConfidentialClusterConfig{}
+	dependencies.Get(confidentialClusterConfig)
+	confidentialClusterConfig.ApplyToConfig(a.Config, "bootstrap")
 
 	if err := AddStorageFiles(a.Config, "/", "bootstrap/files", templateData); err != nil {
 		return err
